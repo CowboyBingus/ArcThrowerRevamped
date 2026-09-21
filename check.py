@@ -18,7 +18,6 @@ import zipfile
 
 def find_luajit():
     candidates = [os.environ.get("HD2_LUAJIT"), shutil.which("luajit")]
-    candidates.append(os.path.expanduser("~/miniconda3/Library/bin/luajit.exe"))
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             return Path(candidate)
