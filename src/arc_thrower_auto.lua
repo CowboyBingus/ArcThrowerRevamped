@@ -44,8 +44,9 @@ int QueryPerformanceFrequency(int64_t *frequency);
 void *GetModuleHandleA(const char *name);
 ]]
 
-local kernel = ffi.load('kernel32')
-local user32 = ffi.load('user32')
+-- Resolved on first use, so the addon loads inert in any environment
+-- and a failed binding only leaves the assist idle.
+local kernel, user32
 
 -- Build 24826606 anchors. The charge manager holds one 40-byte entry per
 -- weapon; entry + 4 is the charge, + 8 its full-charge time, + 12 the flag the
@@ -62,7 +63,6 @@ local POINTER_SIZE = 8
 local MEM_COMMIT, MEM_PRIVATE, PAGE_READONLY, PAGE_READWRITE = 0x1000, 0x20000, 0x02, 0x04
 local VK_LBUTTON = 0x01
 
-local process = kernel.GetCurrentProcess()
 local state = {armed = false, patched = false, record = nil, scans = 0,
                checked = false, supported = false, resolved = nil,
                previous = nil, shots = {}, last_shot = nil, status = nil,
@@ -70,10 +70,27 @@ local state = {armed = false, patched = false, record = nil, scans = 0,
                reason_time = nil, drove_since = nil, drove_peak = 0, rescans = 0}
 
 local performance_frequency = ffi.new('int64_t[1]')
-kernel.QueryPerformanceFrequency(performance_frequency)
 local performance_counter = ffi.new('int64_t[1]')
 
+local function bind()
+    if state.bound then return true end
+    if state.bind_error then return false end
+    local ok, problem = pcall(function()
+        kernel = ffi.load('kernel32')
+        user32 = ffi.load('user32')
+        state.process = kernel.GetCurrentProcess()
+        kernel.QueryPerformanceFrequency(performance_frequency)
+    end)
+    if not ok then
+        state.bind_error = tostring(problem)
+        return false
+    end
+    state.bound = true
+    return true
+end
+
 local function seconds()
+    if not state.bound then return 0 end
     kernel.QueryPerformanceCounter(performance_counter)
     return tonumber(performance_counter[0]) / tonumber(performance_frequency[0])
 end
@@ -89,6 +106,7 @@ local function note(message)
 end
 
 local function log_line(message)
+    if not kernel then return note(message) end
     note(string.format('[%8.3f] %s', tonumber(kernel.GetTickCount64()) / 1000 % 100000,
                        message))
 end
@@ -96,7 +114,8 @@ end
 local function read(address, size)
     local buffer = ffi.new('uint8_t[?]', size)
     local got = ffi.new('size_t[1]')
-    if kernel.ReadProcessMemory(process, ffi.cast('void *', address), buffer, size,
+    if not state.bound then return nil end
+    if kernel.ReadProcessMemory(state.process, ffi.cast('void *', address), buffer, size,
                                 got) == 0 then
         return nil
     end
@@ -106,20 +125,22 @@ end
 
 local function write(address, data)
     local written = ffi.new('size_t[1]')
-    return kernel.WriteProcessMemory(process, ffi.cast('void *', address),
+    if not state.bound then return false end
+    return kernel.WriteProcessMemory(state.process, ffi.cast('void *', address),
                                      ffi.cast('const void *', data), #data,
                                      written) ~= 0
 end
 
 local function write_protected(address, data)
     local previous = ffi.new('uint32_t[1]')
-    if kernel.VirtualProtectEx(process, ffi.cast('void *', address), #data,
+    if not state.bound then return false end
+    if kernel.VirtualProtectEx(state.process, ffi.cast('void *', address), #data,
                                PAGE_READWRITE, previous) == 0 then
         return false
     end
     local ok = write(address, data)
     local restored = ffi.new('uint32_t[1]')
-    kernel.VirtualProtectEx(process, ffi.cast('void *', address), #data,
+    kernel.VirtualProtectEx(state.process, ffi.cast('void *', address), #data,
                             previous[0], restored)
     return ok
 end
@@ -159,7 +180,7 @@ local function patch_charge_record()
     local address = 0
     local limit = 0x7FFFFFFFFFFF
     while address < limit do
-        if kernel.VirtualQueryEx(process, ffi.cast('const void *', address),
+        if kernel.VirtualQueryEx(state.process, ffi.cast('const void *', address),
                                  information, ffi.sizeof(information)) == 0 then
             return false, 'VirtualQueryEx failed'
         end
@@ -256,6 +277,14 @@ local failure_logged = false
 local resolved = nil
 
 local function step(dt)
+    if not bind() then
+        if not state.bind_logged then
+            state.bind_logged = true
+            note('Engine bindings unavailable; the addon stays idle: '
+                 .. tostring(state.bind_error))
+        end
+        return
+    end
     if not supported_build() then
         if not failure_logged then
             failure_logged = true
