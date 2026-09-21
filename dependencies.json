@@ -1,0 +1,19 @@
+{
+  "dependencies": [
+    {
+      "name": "Bingus Shared Loader",
+      "version": "v15 or newer (API 1)",
+      "url": "https://github.com/CowboyBingus/BingusSharedLoader/releases/latest",
+      "optional": false,
+      "purpose": "Discovers and starts the plaintext addon"
+    }
+  ],
+  "build_dependencies": [
+    {
+      "name": "LuaJIT",
+      "url": "https://github.com/LuaJIT/LuaJIT",
+      "optional": false,
+      "purpose": "Validates the addon dialect and compiles it for packaging"
+    }
+  ]
+}

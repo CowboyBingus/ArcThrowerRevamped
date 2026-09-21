@@ -1,0 +1,31 @@
+Arc Thrower Revamped - install, update, remove
+==============================================
+
+Install
+-------
+1. Close Helldivers 2.
+2. Import Arc-Thrower-Revamped-v1.zip and Bingus Shared Loader v15 or newer
+   into Arsenal or HD2MM.
+3. Enable both. With Arsenal's default priority the loader belongs at the
+   bottom of the load order; with first-mod priority, at the top.
+4. Purge / Deploy. Start the game normally.
+
+Use one mod manager. Remove older packages that bundle their own loader before
+deploying this one.
+
+Update
+------
+Replace the Arc Thrower Revamped ZIP with the newer one and deploy again. The
+shared loader updates independently of this mod.
+
+Remove
+------
+Disable Arc Thrower Revamped and Purge / Deploy. No files are left outside the
+mod manager's storage. The log file may be deleted at any time:
+
+  %LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/ArcThrowerAuto.log
+
+Requirements
+------------
+Steam build 24826606 / EXE 1.8.45317.0. Other builds are refused by the addon's
+own fingerprint check.
