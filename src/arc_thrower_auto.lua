@@ -15,34 +15,6 @@ local module = {revision = 'v1'}
 local ffi = require('ffi')
 local bit = require('bit')
 
-ffi.cdef [[
-typedef unsigned char uint8_t;
-typedef unsigned short uint16_t;
-typedef unsigned int uint32_t;
-typedef unsigned long long uint64_t;
-typedef struct {
-    void *BaseAddress;
-    void *AllocationBase;
-    uint32_t AllocationProtect;
-    uint16_t PartitionId;
-    uint16_t Padding1;
-    size_t RegionSize;
-    uint32_t State;
-    uint32_t Protect;
-    uint32_t Type;
-    uint32_t Padding2;
-} MEMORY_BASIC_INFORMATION;
-void *GetCurrentProcess(void);
-int ReadProcessMemory(void *process, const void *base, void *buffer, size_t size, size_t *read);
-int WriteProcessMemory(void *process, void *base, const void *buffer, size_t size, size_t *written);
-int VirtualProtectEx(void *process, void *address, size_t size, uint32_t protect, uint32_t *previous);
-int VirtualQueryEx(void *process, const void *address, MEMORY_BASIC_INFORMATION *info, size_t length);
-short GetAsyncKeyState(int key);
-uint64_t GetTickCount64(void);
-int QueryPerformanceCounter(int64_t *count);
-int QueryPerformanceFrequency(int64_t *frequency);
-void *GetModuleHandleA(const char *name);
-]]
 
 -- Resolved on first use, so the addon loads inert in any environment
 -- and a failed binding only leaves the assist idle.
@@ -76,6 +48,46 @@ local function bind()
     if state.bound then return true end
     if state.bind_error then return false end
     local ok, problem = pcall(function()
+        kernel = ffi.load('kernel32')
+        user32 = ffi.load('user32')
+        if type(kernel.GetModuleHandleA) ~= 'function' then
+            error('kernel32 bindings unavailable')
+        end
+        local game = kernel.GetModuleHandleA('game.dll')
+        if game == nil then error('game.dll not loaded') end
+        state.game = tonumber(ffi.cast('uint64_t', game))
+        -- Declared here, not at load: repeating cdef in every
+        -- environment exhausts LuaJIT's CType table.
+        ffi.cdef [[
+        typedef unsigned char uint8_t;
+        typedef unsigned short uint16_t;
+        typedef unsigned int uint32_t;
+        typedef unsigned long long uint64_t;
+        typedef struct {
+            void *BaseAddress;
+            void *AllocationBase;
+            uint32_t AllocationProtect;
+            uint16_t PartitionId;
+            uint16_t Padding1;
+            size_t RegionSize;
+            uint32_t State;
+            uint32_t Protect;
+            uint32_t Type;
+            uint32_t Padding2;
+        } MEMORY_BASIC_INFORMATION;
+        void *GetCurrentProcess(void);
+        int ReadProcessMemory(void *process, const void *base, void *buffer, size_t size, size_t *read);
+        int WriteProcessMemory(void *process, void *base, const void *buffer, size_t size, size_t *written);
+        int VirtualProtectEx(void *process, void *address, size_t size, uint32_t protect, uint32_t *previous);
+        int VirtualQueryEx(void *process, const void *address, MEMORY_BASIC_INFORMATION *info, size_t length);
+        short GetAsyncKeyState(int key);
+        uint64_t GetTickCount64(void);
+        int QueryPerformanceCounter(int64_t *count);
+        int QueryPerformanceFrequency(int64_t *frequency);
+        void *GetModuleHandleA(const char *name);
+        ]]
+        state.process = kernel.GetCurrentProcess()
+        kernel.QueryPerformanceFrequency(performance_frequency)
         kernel = ffi.load('kernel32')
         user32 = ffi.load('user32')
         state.process = kernel.GetCurrentProcess()
