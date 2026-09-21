@@ -5,6 +5,13 @@
 -- charge -> fire cycle repeat while the button stays down. Nothing else is
 -- changed: charge times, cadence, damage and arc settings stay stock.
 
+-- Re-entry guard: deploying the standalone addon and a pack that bundles it
+-- together must not install the assist twice.
+if rawget(_G, 'ArcThrowerRevampedInstalled') then return end
+rawset(_G, 'ArcThrowerRevampedInstalled', true)
+
+local module = {revision = 'v1'}
+
 local ffi = require('ffi')
 local bit = require('bit')
 
@@ -445,5 +452,5 @@ if type(previous_render) == 'function' then
     end
 end
 
-note('Arc Thrower Revamped initialised (loader API ' ..
+note('Arc Thrower Revamped ' .. module.revision .. ' initialised (loader API ' ..
      tostring(loader and loader.api or '?') .. ')')
