@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2
+
+- Bound startup scanning to small chunks and revalidate matches before writing.
+- Inspect active fire commands first and throttle discovery while ordinary weapons fire.
+- Run the assist only from update and disable verbose shot/idle logging by default.
+- Preserve continuous fire, second-weapon discovery, callback returns and build checks.
+- Add synthetic work-budget and firing regressions; in-game validation is pending.
+
 ## v1.1
 
 - Fix startup stopping with "kernel32 bindings unavailable" or a missing

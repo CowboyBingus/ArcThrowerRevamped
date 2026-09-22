@@ -4,7 +4,7 @@ Arc Thrower Revamped - install, update, remove
 Install
 -------
 1. Close Helldivers 2.
-2. Import Arc-Thrower-Revamped-v1.1.zip and Bingus Shared Loader v15 or newer
+2. Import Arc-Thrower-Revamped-v1.2.zip and Bingus Shared Loader v15 or newer
    into Arsenal or HD2MM.
 3. Enable both. With Arsenal's default priority the loader belongs at the
    bottom of the load order; with first-mod priority, at the top.

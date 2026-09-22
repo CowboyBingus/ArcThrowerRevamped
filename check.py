@@ -47,6 +47,16 @@ def check_bindings(lua, path):
         print(result.stdout.strip())
 
 
+def check_work_budget(lua, path):
+    test = Path(__file__).parent / "tests" / "test_work_budget.lua"
+    for scenario in ("normal", "slow", "stale"):
+        result = subprocess.run([str(lua), str(test), str(path), scenario],
+                                capture_output=True, text=True)
+        if result.returncode:
+            raise SystemExit("Work-budget regression failed:\n" + result.stdout + result.stderr)
+        print(result.stdout.strip())
+
+
 def archive_entry(archive):
     with zipfile.ZipFile(archive) as package:
         name = next(entry for entry in package.namelist() if entry.endswith(".patch_0"))
@@ -86,6 +96,7 @@ def main():
     check_luajit(luajit, source)
     print("LuaJIT check ({}): ok".format(luajit))
     check_bindings(luajit, source)
+    check_work_budget(luajit, source)
     if arguments.archive:
         body = archive_entry(arguments.archive)
         with tempfile.NamedTemporaryFile("wb", suffix=".lua", delete=False) as handle:
@@ -94,6 +105,7 @@ def main():
         try:
             check_luajit(luajit, temporary)
             check_bindings(luajit, temporary)
+            check_work_budget(luajit, temporary)
         finally:
             os.unlink(temporary)
         print("packaged entry check ({}): ok".format(arguments.archive))

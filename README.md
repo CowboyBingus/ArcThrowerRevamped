@@ -12,7 +12,7 @@ held and an arc thrower is the weapon the engine issued a fire command for.
 ## Install
 
 1. Close Helldivers 2.
-2. Import `Arc-Thrower-Revamped-v1.1.zip` and **Bingus Shared Loader v15 or
+2. Import `Arc-Thrower-Revamped-v1.2.zip` and **Bingus Shared Loader v15 or
    newer** into Arsenal or HD2MM, then enable both.
 3. With Arsenal's default priority, put the loader last at the bottom of the
    load order.
@@ -32,13 +32,13 @@ loader should be removed before deploying this one.
 - No executable code is modified. The addon writes the thrower's charge record
   (`auto_fire_in_safety`) and its runtime charge entry, and verifies a known
   `game.dll` fingerprint before touching anything.
-- Validated on Steam build 24826606 / EXE 1.8.45317.0 in a solo session. Other
-  builds are refused by design.
+- Targets Steam build 24826606 / EXE 1.8.45317.0. The earlier implementation
+  was validated in a solo session; v1.2 still needs in-game verification.
+  Other builds are refused by design.
 
-`%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/ArcThrowerAuto.log` records the
-build check, the patched charge record, every shot with its interval, a
-four-per-second status line while the assist runs, and the reason it is idle
-otherwise.
+`%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/ArcThrowerAuto.log` records startup,
+the patched charge record, and the first error. Routine shot and hold diagnostics
+are disabled unless `ArcThrowerDiagnostics` is explicitly enabled.
 
 ## Build
 
@@ -47,7 +47,7 @@ its `-- HD2-Addon:` declaration. Package it from this checkout:
 
 ```powershell
 python -B scripts/build.py --loader ..\BingusSharedLoader `
-  --output releases\Arc-Thrower-Revamped-v1.1.zip
+  --output releases\Arc-Thrower-Revamped-v1.2.zip
 ```
 
 The builder runs `python check.py --archive <zip>` before finishing. The check
@@ -60,3 +60,11 @@ checks do not validate live gameplay.
 Requires [Bingus Shared Loader](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest)
 v15 or newer (API 1). Artwork is not included; the repository ships source and
 the packaged release only.
+
+## Performance update — v1.2
+
+The startup scan runs incrementally, reading at most 64 KiB at once with bounded work per update. Active fire commands are checked before looking through charged weapons; unsuccessful discovery is retried at most ten times per second while the button stays held. Render does not run a second assist. Normal shot, hold and idle diagnostics are disabled; startup and actual errors remain logged.
+
+Offline binding, work-budget and synthetic firing tests pass. This update still needs in-game verification.
+
+Release **v1.2** includes input/performance fixes. Offline checks cover this revision; in-game frame-time validation is pending.

@@ -10,7 +10,7 @@
 if rawget(_G, 'ArcThrowerRevampedInstalled') then return end
 rawset(_G, 'ArcThrowerRevampedInstalled', true)
 
-local module = {revision = 'v1.1'}
+local module = {revision = 'v1.2'}
 
 local ffi = require('ffi')
 local bit = require('bit')
@@ -112,6 +112,7 @@ local function note(message)
 end
 
 local function log_line(message)
+    if not rawget(_G, 'ArcThrowerDiagnostics') then return end
     if not kernel then return note(message) end
     note(string.format('[%8.3f] %s', tonumber(kernel.GetTickCount64()) / 1000 % 100000,
                        message))
@@ -181,11 +182,12 @@ end
 -- The weapon data library is one large read-only private allocation. The arc
 -- thrower's charge record is located by its animation-variable fingerprint;
 -- auto_fire_in_safety tells the engine it may complete the shot itself.
-local function patch_charge_record()
+local function scan_charge_record()
     local information = ffi.new('MEMORY_BASIC_INFORMATION')
     local address = 0
     local limit = 0x7FFFFFFFFFFF
     while address < limit do
+        coroutine.yield(0) -- bound region queries as well as data reads
         if kernel.VirtualQueryEx(state.process, ffi.cast('const void *', address),
                                  information, ffi.sizeof(information)) == 0 then
             return false, 'VirtualQueryEx failed'
@@ -196,8 +198,9 @@ local function patch_charge_record()
            and information.Type == MEM_PRIVATE and size >= 0x100000 then
             local offset = 0
             while offset < size do
-                local span = math.min(0x100000, size - offset)
+                local span = math.min(65536, size - offset)
                 local blob = read(base + offset, span)
+                coroutine.yield(span)
                 if blob then
                     local start = 1
                     while true do
@@ -205,7 +208,7 @@ local function patch_charge_record()
                         if not found then break end
                         local record = base + offset + found - 1 - 168
                         local charge = read(record, 216)
-                        if charge
+                        if charge and charge:sub(169, 184) == ARC_FINGERPRINT
                            and math.abs(f32(charge, 0) - 1.0) < 1e-3
                            and math.abs(f32(charge, 24) - 1.1) < 1e-3
                            and math.abs(f32(charge, 48) - 1.2) < 1e-3
@@ -219,9 +222,11 @@ local function patch_charge_record()
                             return false, 'charge record write failed'
                         end
                         start = found + 1
+                        coroutine.yield(0) -- malformed candidates also consume a work slice
                     end
                 end
-                offset = offset + span
+                -- Overlap keeps a fingerprint crossing a chunk boundary visible.
+                offset = offset + (offset + span < size and span - #ARC_FINGERPRINT + 1 or span)
             end
         end
         address = base + size
@@ -230,53 +235,70 @@ local function patch_charge_record()
     return false, 'charge record not found'
 end
 
--- A player can own more than one arc thrower (a second one called down later
--- keeps its own entity and charge entry), so all of them are collected.
-local function arc_candidates()
-    local game = kernel.GetModuleHandleA('game.dll')
-    if game == nil then return {} end
-    local manager = pointer(tonumber(ffi.cast('uint64_t', game)) + CHARGE_MANAGER)
-    if not manager then return {} end
-    local count_blob = read(manager + 16, 4)
-    if not count_blob then return {} end
-    local count = u32(count_blob, 0)
-    if count < 1 or count > 512 then return {} end
-    local entities = pointer(manager + 56)
-    local entries = pointer(manager + 64)
-    if not entities or not entries then return {} end
-    local list = {}
+-- One update may examine at most 16 scan steps / 256 KiB, with a soft
+-- one-millisecond deadline. A native read already in flight is not preemptible.
+local scan_thread, next_scan = nil, 0
+local function patch_charge_record(now)
+    if now < next_scan then return false, 'waiting' end
+    if not scan_thread then
+        scan_thread = coroutine.create(scan_charge_record)
+        state.scans = state.scans + 1
+    end
+    local bytes, deadline = 0, seconds() + 0.001
+    for _ = 1, 16 do
+        local ok, result, reason = coroutine.resume(scan_thread)
+        if not ok then
+            scan_thread, next_scan = nil, now + 5
+            return false, 'scan failed'
+        end
+        if coroutine.status(scan_thread) == 'dead' then
+            scan_thread, next_scan = nil, now + 5
+            return result, reason
+        end
+        bytes = bytes + (result or 0)
+        if bytes >= 262144 or seconds() >= deadline then break end
+    end
+    return false, 'pending'
+end
+
+-- Inspect the small fire-command table first. Ordinary weapons never trigger
+-- a walk of every charged weapon. Charge-table lookup is needed only to arm
+-- an Arc Thrower that the engine is actually firing.
+local function active_arc()
+    local manager = pointer(state.game + TRIGGER_MANAGER)
+    if not manager or manager == 0 then return nil end
+    local header = read(manager + 24, 72)
+    if not header then return nil end
+    local count, entities, held = u32(header, 0), u64(header, 40), u64(header, 64)
+    if count < 1 or count > 64 or entities == 0 or held == 0 then return nil end
+    local flags, pointers = read(held, count), read(entities, count * POINTER_SIZE)
+    if not flags or not pointers then return nil end
+    local chosen, command
     for index = 0, count - 1 do
-        local entity = pointer(entities + index * POINTER_SIZE)
-        if entity then
-            local record = read(entity, 24)
-            if record and record:sub(1, 8) == ARC_RESOURCE then
-                list[#list + 1] = {entity = entity, index = index,
-                                   entry = entries + index * ENTRY_SIZE,
-                                   active = bit.band(record:byte(21), 1) == 1}
+        if flags:byte(index + 1) ~= 0 then
+            local entity = u64(pointers, index * POINTER_SIZE)
+            local record = entity ~= 0 and read(entity, 24)
+            if record and record:sub(1, 8) == ARC_RESOURCE and bit.band(record:byte(21), 1) == 1 then
+                chosen, command = entity, held + index
+                break
             end
         end
     end
-    return list
-end
-
--- The engine sets a per-weapon fire command byte only for the weapon the
--- player is actually firing, which identifies the wielded thrower.
-local function fire_command_address(entity)
-    local game = kernel.GetModuleHandleA('game.dll')
-    if game == nil then return nil end
-    local manager = pointer(tonumber(ffi.cast('uint64_t', game)) + TRIGGER_MANAGER)
-    if not manager then return nil end
-    local count_blob = read(manager + 24, 4)
-    local entities = pointer(manager + 64)
-    local held = pointer(manager + 88)
-    if not count_blob or not entities or not held then return nil end
-    local count = math.min(u32(count_blob, 0), 64)
-    for slot = 0, count - 1 do
-        if pointer(entities + slot * POINTER_SIZE) == entity then
-            return held + slot
+    if not chosen then return nil end
+    manager = pointer(state.game + CHARGE_MANAGER)
+    if not manager or manager == 0 then return nil end
+    header = read(manager + 16, 56)
+    if not header then return nil end
+    count, entities = u32(header, 0), u64(header, 40)
+    local entries = u64(header, 48)
+    if count < 1 or count > 512 or entities == 0 or entries == 0 then return nil end
+    pointers = read(entities, count * POINTER_SIZE)
+    if not pointers then return nil end
+    for index = 0, count - 1 do
+        if u64(pointers, index * POINTER_SIZE) == chosen then
+            return {entity=chosen, entry=entries + index * ENTRY_SIZE, held=command}
         end
     end
-    return nil
 end
 
 local failure_logged = false
@@ -298,22 +320,19 @@ local function step(dt)
         end
         return
     end
+    local now = seconds()
     if not state.patched then
-        state.scans = state.scans + 1
-        if state.scans <= 1 or state.scans % 512 == 0 then
-            local ok, reason = patch_charge_record()
-            if ok then
-                note('Charge record patched at ' .. string.format('%#x', state.record))
-            elseif reason and state.scans == 1 then
-                note('Charge record not ready yet: ' .. tostring(reason))
-            end
+        local ok, reason = patch_charge_record(now)
+        if ok then
+            note('Charge record ready.')
+        elseif reason ~= 'pending' and reason ~= 'waiting' and not state.scan_logged then
+            state.scan_logged = true
+            note('Charge record not ready yet: ' .. tostring(reason))
         end
     end
-
-    local now = seconds()
     local down = bit.band(user32.GetAsyncKeyState(VK_LBUTTON), 0x8000) ~= 0
     if not down then
-        if state.armed then
+        if state.armed and rawget(_G, 'ArcThrowerDiagnostics') then
             local intervals = {}
             for index = 2, #state.shots do
                 local interval = state.shots[index]
@@ -334,7 +353,8 @@ local function step(dt)
             log_line(summary)
         end
         state.armed = false
-        state.resolved = nil
+        resolved = nil
+        state.next_discovery = nil
         state.previous = nil
         state.shots = {}
         state.last_shot = nil
@@ -356,20 +376,9 @@ local function step(dt)
     -- Only assist after the engine issued a fire command for an arc thrower, so
     -- holding the button for another weapon stays untouched.
     if not state.armed then
-        local chosen = nil
-        for _, candidate in ipairs(arc_candidates()) do
-            if candidate.active then
-                local command = fire_command_address(candidate.entity)
-                if command then
-                    local value = read(command, 1)
-                    if value and value:byte(1) ~= 0 then
-                        candidate.held = command
-                        chosen = candidate
-                        break
-                    end
-                end
-            end
-        end
+        if now < (state.next_discovery or 0) then return end
+        state.next_discovery = now + 0.1
+        local chosen = active_arc()
         if not chosen then
             state.reason = 'waiting for the engine fire command'
             return
@@ -419,7 +428,7 @@ local function step(dt)
 
     local previous = state.previous
     state.previous = value
-    if previous and previous > full * 0.5 and value < full * 0.05 then
+    if rawget(_G, 'ArcThrowerDiagnostics') and previous and previous > full * 0.5 and value < full * 0.05 then
         local interval = state.last_shot and (now - state.last_shot) or nil
         state.last_shot = now
         state.shots[#state.shots + 1] = interval
@@ -436,7 +445,7 @@ local function step(dt)
         return
     end
 
-    if (not state.status) or (now - state.status >= 0.25) then
+    if rawget(_G, 'ArcThrowerDiagnostics') and ((not state.status) or (now - state.status >= 0.25)) then
         local window = now - (state.status or now)
         local delta = value - (state.status_charge or value)
         state.status = now
@@ -453,8 +462,8 @@ local function assist(dt)
     local ok, reason = pcall(step, dt)
     if not ok then
         state.errors = state.errors + 1
-        if state.errors <= 20 then
-            log_line('error #' .. tostring(state.errors) .. ': ' .. tostring(reason))
+        if state.errors == 1 then
+            note('error #' .. tostring(state.errors) .. ': ' .. tostring(reason))
         end
     elseif state.reason then
         local now = seconds()
@@ -468,24 +477,17 @@ local function assist(dt)
     end
 end
 
-local function wrapped_update(dt)
+local function wrapped_update(dt, ...)
     assist(dt)
     if type(previous_update) == 'function' then
-        return previous_update(dt)
+        return previous_update(dt, ...)
     end
 end
 
 update = wrapped_update
 
--- The engine also drives a per-frame render callback; running the assist there
--- too gives the writes a second chance each frame.
-local previous_render = rawget(_G, 'render')
-if type(previous_render) == 'function' then
-    function render(...)
-        assist(0)
-        return previous_render(...)
-    end
-end
+-- Update owns the assist. Render remains untouched so discovery and native
+-- writes run once per game update, regardless of how often the engine renders.
 
 note('Arc Thrower Revamped ' .. module.revision .. ' initialised (loader API ' ..
      tostring(loader and loader.api or '?') .. ')')
