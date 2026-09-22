@@ -3,7 +3,8 @@
 The game loader runs LuaJIT (Lua 5.1 plus extensions), so a file that parses
 under a Lua 5.3 grammar can still fail to load - for example the Lua 5.3
 bitwise operators. This script checks the source with both parsers and, when a
-release archive is given, re-checks the Lua that is actually packaged.
+release archive is given, re-checks the Lua that is actually packaged. Native
+startup tests execute the first callbacks with Windows x64 LuaJIT.
 """
 import argparse
 import os
@@ -33,6 +34,17 @@ def check_luajit(lua, path):
     if result.returncode != 0:
         raise SystemExit("LuaJIT rejected {}:\n{}".format(path, result.stdout.strip()
                                                           or result.stderr.strip()))
+
+
+def check_bindings(lua, path):
+    test = Path(__file__).parent / "tests" / "test_bindings.lua"
+    for scenario in ("clean", "predeclared", "game-present"):
+        result = subprocess.run([str(lua), str(test), str(path), scenario],
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            raise SystemExit("Native startup failed for {} ({}):\n{}".format(
+                path, scenario, result.stdout + result.stderr))
+        print(result.stdout.strip())
 
 
 def archive_entry(archive):
@@ -73,6 +85,7 @@ def main():
         raise SystemExit("LuaJIT not found; set HD2_LUAJIT to validate the loader dialect")
     check_luajit(luajit, source)
     print("LuaJIT check ({}): ok".format(luajit))
+    check_bindings(luajit, source)
     if arguments.archive:
         body = archive_entry(arguments.archive)
         with tempfile.NamedTemporaryFile("wb", suffix=".lua", delete=False) as handle:
@@ -80,6 +93,7 @@ def main():
             temporary = handle.name
         try:
             check_luajit(luajit, temporary)
+            check_bindings(luajit, temporary)
         finally:
             os.unlink(temporary)
         print("packaged entry check ({}): ok".format(arguments.archive))

@@ -12,7 +12,7 @@ held and an arc thrower is the weapon the engine issued a fire command for.
 ## Install
 
 1. Close Helldivers 2.
-2. Import `Arc-Thrower-Revamped-v1.zip` and **Bingus Shared Loader v15 or
+2. Import `Arc-Thrower-Revamped-v1.1.zip` and **Bingus Shared Loader v15 or
    newer** into Arsenal or HD2MM, then enable both.
 3. With Arsenal's default priority, put the loader last at the bottom of the
    load order.
@@ -43,19 +43,19 @@ otherwise.
 ## Build
 
 The addon is one plaintext script discovered by Bingus Shared Loader through
-its `-- HD2-Addon:` declaration. Package it from a loader checkout:
+its `-- HD2-Addon:` declaration. Package it from this checkout:
 
 ```powershell
-python -B scripts/build_addon.py --name mods/cowboybingus/arc_thrower_auto `
-  --entry ..\ArcThrowerAuto\src\arc_thrower_auto.lua `
-  --guid 00f25f55-962e-42e7-96ed-cc1f17fac9c3 `
-  --display-name "Arc Thrower Revamped" `
-  --output ..\releases\Arc-Thrower-Revamped-v1.zip
+python -B scripts/build.py --loader ..\BingusSharedLoader `
+  --output releases\Arc-Thrower-Revamped-v1.1.zip
 ```
 
-Run `python check.py --archive <zip>` before publishing. The loader runs
-LuaJIT, so the check validates the source and the packaged entry with a real
-LuaJIT binary (set `HD2_LUAJIT` or have `luajit` on `PATH`).
+The builder runs `python check.py --archive <zip>` before finishing. The check
+validates the source and packaged entry with Windows x64 LuaJIT (set
+`HD2_LUAJIT` or have `luajit` on `PATH`). It runs the first update and render
+callbacks with clean and predeclared native bindings, and checks that a
+synthetic unsupported game image is rejected without writes. These offline
+checks do not validate live gameplay.
 
 Requires [Bingus Shared Loader](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest)
 v15 or newer (API 1). Artwork is not included; the repository ships source and

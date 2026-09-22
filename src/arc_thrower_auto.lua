@@ -10,7 +10,7 @@
 if rawget(_G, 'ArcThrowerRevampedInstalled') then return end
 rawset(_G, 'ArcThrowerRevampedInstalled', true)
 
-local module = {revision = 'v1'}
+local module = {revision = 'v1.1'}
 
 local ffi = require('ffi')
 local bit = require('bit')
@@ -48,11 +48,10 @@ local function bind()
     if state.bound then return true end
     if state.bind_error then return false end
     local ok, problem = pcall(function()
+        -- Declare before lookup; native LuaJIT functions are callable cdata.
+        ffi.cdef [[void *GetModuleHandleA(const char *name);]]
         kernel = ffi.load('kernel32')
         user32 = ffi.load('user32')
-        if type(kernel.GetModuleHandleA) ~= 'function' then
-            error('kernel32 bindings unavailable')
-        end
         local game = kernel.GetModuleHandleA('game.dll')
         if game == nil then error('game.dll not loaded') end
         state.game = tonumber(ffi.cast('uint64_t', game))
@@ -84,12 +83,7 @@ local function bind()
         uint64_t GetTickCount64(void);
         int QueryPerformanceCounter(int64_t *count);
         int QueryPerformanceFrequency(int64_t *frequency);
-        void *GetModuleHandleA(const char *name);
         ]]
-        state.process = kernel.GetCurrentProcess()
-        kernel.QueryPerformanceFrequency(performance_frequency)
-        kernel = ffi.load('kernel32')
-        user32 = ffi.load('user32')
         state.process = kernel.GetCurrentProcess()
         kernel.QueryPerformanceFrequency(performance_frequency)
     end)

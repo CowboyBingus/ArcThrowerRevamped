@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1
+
+- Fix startup stopping with "kernel32 bindings unavailable" or a missing
+  `GetModuleHandleA` declaration. Declare the API before use and accept native
+  LuaJIT function bindings.
+- Validate the first update and render callbacks with real Windows bindings,
+  including the actual packaged script. Gameplay and build checks are unchanged.
+
 ## v1
 
 - Hold the fire button to keep the ARC-3 Arc Thrower firing. The weapon's own
