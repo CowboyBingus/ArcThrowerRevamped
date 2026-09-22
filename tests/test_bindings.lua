@@ -15,7 +15,7 @@ local fixture, module_handle
 if scenario == 'game-present' then
     -- Only the game handle is synthetic. Native process, timer and memory-read
     -- calls operate on this process and its zero-filled, unsupported image.
-    fixture = ffi.new('uint8_t[?]', 0x74DDF0 + 16)
+    fixture = ffi.new('uint8_t[?]', 0x755f90 + 16)
     module_handle = ffi.cast('void *(*)(const char *)', function(name)
         assert(ffi.string(name) == 'game.dll')
         return fixture

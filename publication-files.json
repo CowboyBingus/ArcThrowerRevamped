@@ -1,0 +1,17 @@
+[
+  ".editorconfig",
+  ".gitattributes",
+  ".gitignore",
+  "CHANGELOG.md",
+  "INSTALL.txt",
+  "README.md",
+  "check.py",
+  "dependencies.json",
+  "docs/MIGRATION_VALIDATION.md",
+  "docs/RELEASE_NOTES.md",
+  "publication-files.json",
+  "scripts/build.py",
+  "src/arc_thrower_auto.lua",
+  "tests/test_bindings.lua",
+  "tests/test_work_budget.lua"
+]

@@ -1,3 +1,9 @@
+# v1.4
+
+- Update compatibility for game build 25327279.
+- Use the game fire command for mouse, controller and rebound controls.
+- Fix charge resets that could stop repeated firing.
+
 # Changelog
 
 ## v1.2

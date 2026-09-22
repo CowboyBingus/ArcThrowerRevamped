@@ -10,7 +10,7 @@
 if rawget(_G, 'ArcThrowerRevampedInstalled') then return end
 rawset(_G, 'ArcThrowerRevampedInstalled', true)
 
-local module = {revision = 'v1.2'}
+local module = {revision = 'v1.4'}
 
 local ffi = require('ffi')
 local bit = require('bit')
@@ -18,14 +18,14 @@ local bit = require('bit')
 
 -- Resolved on first use, so the addon loads inert in any environment
 -- and a failed binding only leaves the assist idle.
-local kernel, user32
+local kernel
 
--- Build 24826606 anchors. The charge manager holds one 40-byte entry per
+-- Build 25327279 anchors. The charge manager holds one 40-byte entry per
 -- weapon; entry + 4 is the charge, + 8 its full-charge time, + 12 the flag the
 -- engine's charge updater advances while set.
-local CHARGE_MANAGER = 0x276C940
-local TRIGGER_MANAGER = 0x276C390
-local FIRE_MODE_SETTER = 0x74DDF0
+local CHARGE_MANAGER = 0x3326c20
+local TRIGGER_MANAGER = 0x3326660
+local FIRE_MODE_SETTER = 0x755f90
 local FIRE_MODE_SIGNATURE = '\x48\x89\x4c\x24\x08\x53\x55\x56\x57\x41\x57\x48\x83\xec\x20'
 local ARC_FINGERPRINT = '\x0f\xd7\xd6\x1a\x96\xfb\xa2\x29\xa9\x31\xee\x67\x0e\x04\x95\x41'
 local ARC_RESOURCE = '\xe6\x06\x73\x0f\xd5\x9c\xde\x96'
@@ -33,7 +33,6 @@ local AUTO_FIRE_FLAG = 184
 local ENTRY_SIZE = 40
 local POINTER_SIZE = 8
 local MEM_COMMIT, MEM_PRIVATE, PAGE_READONLY, PAGE_READWRITE = 0x1000, 0x20000, 0x02, 0x04
-local VK_LBUTTON = 0x01
 
 local state = {armed = false, patched = false, record = nil, scans = 0,
                checked = false, supported = false, resolved = nil,
@@ -51,7 +50,6 @@ local function bind()
         -- Declare before lookup; native LuaJIT functions are callable cdata.
         ffi.cdef [[void *GetModuleHandleA(const char *name);]]
         kernel = ffi.load('kernel32')
-        user32 = ffi.load('user32')
         local game = kernel.GetModuleHandleA('game.dll')
         if game == nil then error('game.dll not loaded') end
         state.game = tonumber(ffi.cast('uint64_t', game))
@@ -79,7 +77,6 @@ local function bind()
         int WriteProcessMemory(void *process, void *base, const void *buffer, size_t size, size_t *written);
         int VirtualProtectEx(void *process, void *address, size_t size, uint32_t protect, uint32_t *previous);
         int VirtualQueryEx(void *process, const void *address, MEMORY_BASIC_INFORMATION *info, size_t length);
-        short GetAsyncKeyState(int key);
         uint64_t GetTickCount64(void);
         int QueryPerformanceCounter(int64_t *count);
         int QueryPerformanceFrequency(int64_t *frequency);
@@ -166,6 +163,79 @@ local function pointer(address)
     local blob = read(address, POINTER_SIZE)
     if not blob then return nil end
     return u64(blob, 0)
+end
+
+-- Resolve the local avatar through both registries, including its generation.
+-- Slot 9 is the native Fire action (pair 2,9), after input rebinding/controller
+-- processing; +8 is held time. Aim is slot 8 and must not drive this assist.
+local function lookup(header, key, limit)
+        if not header then return nil end
+        local data,cap,empty,mult=u64(header,0),u32(header,8),u32(header,12),u32(header,16)
+        if data==0 or cap==0 or cap>limit or bit.band(cap,cap-1)~=0 then return nil end
+        local product=tonumber(ffi.cast('uint32_t',ffi.new('uint64_t',key)*ffi.new('uint64_t',mult)))
+        for probe=0,math.min(cap,64)-1 do
+            local row=read(data+8*bit.band(product+probe,cap-1),8)
+            if not row then return nil end
+            if u32(row,0)==key then local index=u32(row,4);if index~=0xffffffff then return index end;return nil end
+            if u32(row,0)==empty then return nil end
+        end
+end
+local function local_fire()
+    local pm,owner,am=pointer(state.game+0x3326468),pointer(state.game+0x346bf98),pointer(state.game+0x3326d20)
+    if not pm or pm==0 or not owner or owner==0 or not am or am==0 then return nil end
+    local counts,unit=read(pm+0x84,8),read(pm+0x3a8,4)
+    if not counts or not unit or u32(counts,0)<1 or u32(counts,0)>4
+        or u32(counts,4)<1 or u32(counts,4)>4 or u32(unit,0)==0x7fff then return nil end
+    local player=pointer(pm+0xe8)
+    local player_record=player and player~=0 and read(player,24)
+    if not player_record or bit.band(player_record:byte(21),1)==0 then return nil end
+    local ei=lookup(read(owner+0xf22ec8,20),u32(unit,0),1048576)
+    if not ei or ei>=262144 then return nil end
+    local avatar=read(owner+0xf32f18+ei*24,24)
+    if not avatar or avatar:sub(1,8)~='\x97\xfa\x4d\x29\x4d\x33\x1c\x4d'
+        or bit.band(avatar:byte(21),1)==0 then return nil end
+    local ai=lookup(read(am+0xf8,20),u32(avatar,8),64)
+    local count=read(am+0x6c,4)
+    if not ai or not count or u32(count,0)>8 or ai>=u32(count,0) then return nil end
+    local entity=pointer(am+0x110+ai*8)
+    if not entity or entity==0 or read(entity,24)~=avatar then return nil end
+    local input=read(am+0x150+ai*0xa7aec+0x1b68+9*32,32)
+    if not input then return nil end
+    local held=f32(input,8)
+    if held~=held or held<0 or held>=86400 then return nil end
+    return held>0,avatar
+end
+
+local function local_weapon(record,avatar)
+    local manager=pointer(state.game+0x3326dc0)
+    if not manager or manager==0 then return false end
+    local index=lookup(read(manager+32,20),u32(record,8),8192)
+    if not index or index>=4096 then return false end
+    local rows=pointer(manager+64)
+    local holder=rows and rows~=0 and read(rows+index*48+4,4)
+    return holder and u32(holder,0)==u32(avatar,8) or false
+end
+
+-- Entry arrays can move or compact while fire stays held. Check the slot every
+-- update; only search the bounded pointer array when its binding changed.
+local function charge_entry(chosen)
+    local manager=pointer(state.game+CHARGE_MANAGER)
+    if not manager or manager==0 then return nil end
+    local header=read(manager+16,56)
+    if not header then return nil end
+    local count,entities,entries=u32(header,0),u64(header,40),u64(header,48)
+    if count<1 or count>512 or entities==0 or entries==0 then return nil end
+    if chosen.index and chosen.index<count and pointer(entities+chosen.index*8)==chosen.entity then
+        return entries+chosen.index*ENTRY_SIZE
+    end
+    local pointers=read(entities,count*8)
+    if not pointers then return nil end
+    for index=0,count-1 do
+        if u64(pointers,index*8)==chosen.entity then
+            chosen.index=index
+            return entries+index*ENTRY_SIZE
+        end
+    end
 end
 
 local function supported_build()
@@ -264,7 +334,7 @@ end
 -- Inspect the small fire-command table first. Ordinary weapons never trigger
 -- a walk of every charged weapon. Charge-table lookup is needed only to arm
 -- an Arc Thrower that the engine is actually firing.
-local function active_arc()
+local function active_arc(avatar)
     local manager = pointer(state.game + TRIGGER_MANAGER)
     if not manager or manager == 0 then return nil end
     local header = read(manager + 24, 72)
@@ -273,32 +343,21 @@ local function active_arc()
     if count < 1 or count > 64 or entities == 0 or held == 0 then return nil end
     local flags, pointers = read(held, count), read(entities, count * POINTER_SIZE)
     if not flags or not pointers then return nil end
-    local chosen, command
+    local chosen
     for index = 0, count - 1 do
         if flags:byte(index + 1) ~= 0 then
             local entity = u64(pointers, index * POINTER_SIZE)
             local record = entity ~= 0 and read(entity, 24)
-            if record and record:sub(1, 8) == ARC_RESOURCE and bit.band(record:byte(21), 1) == 1 then
-                chosen, command = entity, held + index
+            if record and record:sub(1, 8) == ARC_RESOURCE and bit.band(record:byte(21), 1) == 1
+                and local_weapon(record,avatar) then
+                chosen = {entity=entity,identity=record}
                 break
             end
         end
     end
     if not chosen then return nil end
-    manager = pointer(state.game + CHARGE_MANAGER)
-    if not manager or manager == 0 then return nil end
-    header = read(manager + 16, 56)
-    if not header then return nil end
-    count, entities = u32(header, 0), u64(header, 40)
-    local entries = u64(header, 48)
-    if count < 1 or count > 512 or entities == 0 or entries == 0 then return nil end
-    pointers = read(entities, count * POINTER_SIZE)
-    if not pointers then return nil end
-    for index = 0, count - 1 do
-        if u64(pointers, index * POINTER_SIZE) == chosen then
-            return {entity=chosen, entry=entries + index * ENTRY_SIZE, held=command}
-        end
-    end
+    chosen.entry=charge_entry(chosen)
+    if chosen.entry then return chosen end
 end
 
 local failure_logged = false
@@ -330,7 +389,7 @@ local function step(dt)
             note('Charge record not ready yet: ' .. tostring(reason))
         end
     end
-    local down = bit.band(user32.GetAsyncKeyState(VK_LBUTTON), 0x8000) ~= 0
+    local down,avatar = local_fire()
     if not down then
         if state.armed and rawget(_G, 'ArcThrowerDiagnostics') then
             local intervals = {}
@@ -364,12 +423,21 @@ local function step(dt)
 
     if resolved then
         local identity = read(resolved.entity, 24)
-        if not identity or identity:sub(1, 8) ~= ARC_RESOURCE then
+        if identity ~= resolved.identity or avatar ~= resolved.avatar or not local_weapon(identity,avatar) then
             resolved = nil
             state.armed = false
             state.previous = nil
             state.reason = 'weapon entity changed'
             return
+        end
+        local entry=charge_entry(resolved)
+        if not entry then
+            resolved=nil;state.armed=false;state.previous=nil
+            state.reason='charge binding changed'
+            return
+        end
+        if entry~=resolved.entry then
+            resolved.entry=entry;state.previous=nil;state.drove_since=nil;state.drove_peak=0
         end
     end
 
@@ -378,12 +446,13 @@ local function step(dt)
     if not state.armed then
         if now < (state.next_discovery or 0) then return end
         state.next_discovery = now + 0.1
-        local chosen = active_arc()
+        local chosen = active_arc(avatar)
         if not chosen then
             state.reason = 'waiting for the engine fire command'
             return
         end
         resolved = chosen
+        resolved.avatar = avatar
         state.armed = true
         state.shots = {}
         state.last_shot = nil
@@ -407,8 +476,9 @@ local function step(dt)
         return
     end
 
-    -- A second arc thrower called down later gets its own charge entry. If the
-    -- entry being driven never charges, follow the new one on the next press.
+    -- Recheck a stalled cycle for a replacement weapon. The engine's original
+    -- one-shot fire command may already be cleared: that alone must not cancel
+    -- a still-held, identity- and slot-validated Arc during a reload or pause.
     if not state.drove_since then
         state.drove_since = now
         state.drove_peak = value
@@ -417,17 +487,23 @@ local function step(dt)
     if (now - state.drove_since) > 1.2 and state.drove_peak < full * 0.25 then
         state.rescans = state.rescans + 1
         log_line(string.format(
-            'entry %#x never charged (peak %.3f) - re-arming on the next press (#%d)',
+            'entry %#x stalled (peak %.3f) - checking the current binding (#%d)',
             resolved.entry, state.drove_peak, state.rescans))
-        resolved = nil
-        state.armed = false
-        state.drove_since = nil
-        state.drove_peak = 0
-        return
+        local chosen=active_arc(avatar)
+        state.drove_since=now;state.drove_peak=value
+        if chosen and (chosen.entity~=resolved.entity or chosen.identity~=resolved.identity or chosen.entry~=resolved.entry) then
+            chosen.avatar=avatar;resolved=chosen;state.previous=nil
+            return
+        end
     end
 
     local previous = state.previous
     state.previous = value
+    -- Progress belongs to this charge cycle, not the best charge since press.
+    -- Otherwise a completed first shot disables stall recovery for the hold.
+    if previous and value < previous - 0.01 then
+        state.drove_since=now;state.drove_peak=value
+    end
     if rawget(_G, 'ArcThrowerDiagnostics') and previous and previous > full * 0.5 and value < full * 0.05 then
         local interval = state.last_shot and (now - state.last_shot) or nil
         state.last_shot = now

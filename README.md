@@ -1,3 +1,4 @@
+
 # Arc Thrower Revamped
 
 Hold the fire button and the ARC-3 Arc Thrower keeps firing. Vanilla charges
@@ -12,7 +13,7 @@ held and an arc thrower is the weapon the engine issued a fire command for.
 ## Install
 
 1. Close Helldivers 2.
-2. Import `Arc-Thrower-Revamped-v1.2.zip` and **Bingus Shared Loader v15 or
+2. Import `Arc-Thrower-Revamped-v1.4.zip` and **Bingus Shared Loader v16 or
    newer** into Arsenal or HD2MM, then enable both.
 3. With Arsenal's default priority, put the loader last at the bottom of the
    load order.
@@ -32,8 +33,8 @@ loader should be removed before deploying this one.
 - No executable code is modified. The addon writes the thrower's charge record
   (`auto_fire_in_safety`) and its runtime charge entry, and verifies a known
   `game.dll` fingerprint before touching anything.
-- Targets Steam build 24826606 / EXE 1.8.45317.0. The earlier implementation
-  was validated in a solo session; v1.2 still needs in-game verification.
+- Targets Steam build 25327279 / EXE 1.8.45850.0. The earlier implementation
+  was validated in a solo session; v1.4 still needs in-game verification.
   Other builds are refused by design.
 
 `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/ArcThrowerAuto.log` records startup,
@@ -47,7 +48,7 @@ its `-- HD2-Addon:` declaration. Package it from this checkout:
 
 ```powershell
 python -B scripts/build.py --loader ..\BingusSharedLoader `
-  --output releases\Arc-Thrower-Revamped-v1.2.zip
+  --output releases\Arc-Thrower-Revamped-v1.4.zip
 ```
 
 The builder runs `python check.py --archive <zip>` before finishing. The check
@@ -61,10 +62,12 @@ Requires [Bingus Shared Loader](https://github.com/CowboyBingus/BingusSharedLoad
 v15 or newer (API 1). Artwork is not included; the repository ships source and
 the packaged release only.
 
-## Performance update — v1.2
+## Performance update â€” v1.4
 
 The startup scan runs incrementally, reading at most 64 KiB at once with bounded work per update. Active fire commands are checked before looking through charged weapons; unsuccessful discovery is retried at most ten times per second while the button stays held. Render does not run a second assist. Normal shot, hold and idle diagnostics are disabled; startup and actual errors remain logged.
 
 Offline binding, work-budget and synthetic firing tests pass. This update still needs in-game verification.
 
-Release **v1.2** includes input/performance fixes. Offline checks cover this revision; in-game frame-time validation is pending.
+See [validation coverage](docs/MIGRATION_VALIDATION.md) for the scope of the release checks.
+
+Current version: **v1.4**, for game build **25327279**. See [changes](CHANGELOG.md) and [validation coverage](docs/MIGRATION_VALIDATION.md).
