@@ -1,3 +1,5 @@
-- Update compatibility for game build 25327279.
-- Use the game fire command for mouse, controller and rebound controls.
-- Fix charge resets that could stop repeated firing.
+- Recover Arc Thrower firing after auto-fire flags or native bindings reset.
+- Resume short input gaps only for the same weapon and uninterrupted hold.
+- Bound discovery work in large trigger tables.
+- Preserve charge, damage and firing cadence.
+- Offline recovery tests pass; affected-session gameplay confirmation is pending.
