@@ -1,5 +1,3 @@
-- Recover Arc Thrower firing after auto-fire flags or native bindings reset.
-- Resume short input gaps only for the same weapon and uninterrupted hold.
-- Bound discovery work in large trigger tables.
-- Preserve charge, damage and firing cadence.
-- Offline recovery tests pass; affected-session gameplay confirmation is pending.
+- Refresh game-build guards for Steam build 25480438.
+- Preserve repeated fire through mouse, controller and rebound fire commands.
+- Offline builds and package checks pass; live gameplay validation remains pending.
