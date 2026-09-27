@@ -1,3 +1,9 @@
+# v1.6.1
+
+- Documentation-only release: the addon is identical to v1.6 (same packaged script).
+- Rewrites the install notes packaged with the addon and the README status: one current status line instead of the compatibility-candidate notes left from the game-build update. In live play the addon loads and finds the Arc Thrower's charge record.
+- Lists one loader requirement, Bingus Shared Loader v18.
+
 # v1.6
 
 - Refresh game-build guards for Steam build 25480438.

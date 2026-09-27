@@ -1,3 +1,3 @@
-- Refresh game-build guards for Steam build 25480438.
-- Preserve repeated fire through mouse, controller and rebound fire commands.
-- Offline builds and package checks pass; live gameplay validation remains pending.
+- Documentation-only release: the addon is identical to v1.6 (same packaged script).
+- Rewrites the install notes packaged with the addon and the README status: one current status line instead of the compatibility-candidate notes left from the game-build update. In live play the addon loads and finds the Arc Thrower's charge record.
+- Lists one loader requirement, Bingus Shared Loader v18.

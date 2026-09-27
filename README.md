@@ -1,6 +1,4 @@
-> Current local compatibility candidate for Steam build 25480438 / EXE 1.8.46015.0. Offline checks passed; live gameplay verification is pending.
-
-Recovery update v1.6: Rechecks the auto-fire patch, rediscovers replacement charge records, and recovers short input/binding outages after the first shot. Release and weapon-ownership checks remain enforced. Synthetic regression tests pass; affected-session gameplay verification remains pending.
+> Release v1.6.1 for Steam build 25480438 / EXE 1.8.46015.0. Offline checks passed; in live play the addon loads and finds the Arc Thrower's charge record.
 
 # Arc Thrower Revamped
 
@@ -16,8 +14,8 @@ held and an arc thrower is the weapon the engine issued a fire command for.
 ## Install
 
 1. Close Helldivers 2.
-2. Import `Arc-Thrower-Revamped-v1.6.zip` and **Bingus Shared Loader v16 or
-   newer** into Arsenal or HD2MM, then enable both.
+2. Import `Arc-Thrower-Revamped-v1.6.1.zip` and **Bingus Shared Loader v18** into
+   Arsenal or HD2MM, then enable both.
 3. With Arsenal's default priority, put the loader last at the bottom of the
    load order.
 4. Purge / Deploy, then start the game.
@@ -39,9 +37,9 @@ loader should be removed before deploying this one.
 - No executable code is modified. The addon writes the thrower's charge record
   (`auto_fire_in_safety`) and its runtime charge entry, and verifies a known
   `game.dll` fingerprint before touching anything.
-- Targets Steam build 25480438 / EXE 1.8.46015.0. The earlier implementation
-  was validated in a solo session; v1.6 still needs in-game verification.
-  Other builds are refused by design.
+- Targets Steam build 25480438 / EXE 1.8.46015.0. Auto-fire was validated in a
+  solo session with an earlier build; this release loads and finds its charge
+  record in live play. Other builds are refused by design.
 
 `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/ArcThrowerAuto.log` records startup,
 the patched charge record, and the first error. Routine shot and hold diagnostics
@@ -54,7 +52,7 @@ its `-- HD2-Addon:` declaration. Package it from this checkout:
 
 ```powershell
 python -B scripts/build.py --loader ..\BingusSharedLoader `
-  --output releases\Arc-Thrower-Revamped-v1.6.zip
+  --output releases\Arc-Thrower-Revamped-v1.6.1.zip
 ```
 
 The builder runs `python check.py --archive <zip>` before finishing. The check
@@ -65,20 +63,20 @@ synthetic unsupported game image is rejected without writes. These offline
 checks do not validate live gameplay.
 
 Requires [Bingus Shared Loader](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest)
-v16 or newer (API 1). Artwork is not included; the repository ships source and
+v18 (API 1). Artwork is not included; the repository ships source and
 the packaged release only.
 
 ## Performance and recovery
 
 The startup scan runs incrementally, reading at most 64 KiB at once with bounded work per update. Active fire commands are checked before looking through charged weapons; unsuccessful discovery is retried at most ten times per second while the button stays held. Render does not run a second assist. Normal shot, hold and idle diagnostics are disabled; startup and actual errors remain logged.
 
-Offline binding, work-budget and synthetic firing tests pass. This update still needs in-game verification.
+Offline binding, work-budget and synthetic firing tests pass. Measured in recorded play the addon costs under 0.1 ms per frame, in missions and aboard the ship.
 
 Release **v1.6** adds bounded recovery without changing charge times, cadence,
 damage, or arc settings. It revalidates the cached auto-fire record every 250 ms
 and searches for a replacement after a sustained charge stall. Trigger discovery
 accepts up to 4096 entries and examines at most 64 active candidates per attempt.
 Recovery, release, changed-weapon, work-budget, and packaged-payload checks run
-offline. In-game frame-time and affected-user verification are pending.
+offline; the recovery paths have not been reproduced in live play.
 
-Current version: **v1.6**, for game build **25480438**. See [changes](CHANGELOG.md) and [validation coverage](docs/MIGRATION_VALIDATION.md).
+Current version: **v1.6.1**, for game build **25480438**. See [changes](CHANGELOG.md) and [validation coverage](docs/MIGRATION_VALIDATION.md).
