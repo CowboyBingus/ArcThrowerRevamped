@@ -1,4 +1,4 @@
-> Release v1.6.1 for Steam build 25480438 / EXE 1.8.46015.0. Offline checks passed; in live play the addon loads and finds the Arc Thrower's charge record.
+> Release v1.7 for Steam build 25480438 / EXE 1.8.46015.0. Offline checks passed; in live play the addon loads and finds the Arc Thrower's charge record.
 
 # Arc Thrower Revamped
 
@@ -14,8 +14,8 @@ held and an arc thrower is the weapon the engine issued a fire command for.
 ## Install
 
 1. Close Helldivers 2.
-2. Import `Arc-Thrower-Revamped-v1.6.1.zip` and **Bingus Shared Loader v18** into
-   Arsenal or HD2MM, then enable both.
+2. Import `Arc-Thrower-Revamped-v1.7.zip` and **Bingus Shared Loader v18 or newer**
+   into Arsenal or HD2MM, then enable both.
 3. With Arsenal's default priority, put the loader last at the bottom of the
    load order.
 4. Purge / Deploy, then start the game.
@@ -36,7 +36,16 @@ loader should be removed before deploying this one.
   so the addon follows whichever thrower the engine issued a fire command for.
 - No executable code is modified. The addon writes the thrower's charge record
   (`auto_fire_in_safety`) and its runtime charge entry, and verifies a known
-  `game.dll` fingerprint before touching anything.
+  `game.dll` fingerprint before touching anything. Every write is checked
+  first: the charge entry must be private read-write game data, and the
+  record's page private memory the game keeps read-only, which is made
+  writable for that one write and read-only again right after.
+- If the game's update (or a mod's below this one) raises an error, the error
+  still reaches the game unchanged; on the next update the addon puts the
+  charge record back and pauses, and it resumes after 60 clean updates.
+  Eight errors in one burst, or a refused write, stop it for the session with
+  the record put back. At shutdown it puts the record back as well; the log's
+  shutdown line keeps the first failure (`stopped after: <reason>`).
 - Targets Steam build 25480438 / EXE 1.8.46015.0. Auto-fire was validated in a
   solo session with an earlier build; this release loads and finds its charge
   record in live play. Other builds are refused by design.
@@ -52,25 +61,29 @@ its `-- HD2-Addon:` declaration. Package it from this checkout:
 
 ```powershell
 python -B scripts/build.py --loader ..\BingusSharedLoader `
-  --output releases\Arc-Thrower-Revamped-v1.6.1.zip
+  --output releases\Arc-Thrower-Revamped-v1.7.zip
 ```
 
 The builder runs `python check.py --archive <zip>` before finishing. The check
 validates the source and packaged entry with Windows x64 LuaJIT (set
 `HD2_LUAJIT` or have `luajit` on `PATH`). It runs the first update and render
-callbacks with clean and predeclared native bindings, and checks that a
-synthetic unsupported game image is rejected without writes. These offline
-checks do not validate live gameplay.
+callbacks with clean and predeclared native bindings, checks that a synthetic
+unsupported game image is rejected without writes, and, with Windows SDK-style
+prototypes declared first by another mod, scans the test process and patches a
+synthetic charge record in a real read-only region. These offline checks do not
+validate live gameplay.
 
 Requires [Bingus Shared Loader](https://github.com/CowboyBingus/BingusSharedLoader/releases/latest)
-v18 (API 1). Artwork is not included; the repository ships source and
+v18 or newer (API 1). Artwork is not included; the repository ships source and
 the packaged release only.
 
 ## Performance and recovery
 
 The startup scan runs incrementally, reading at most 64 KiB at once with bounded work per update. Active fire commands are checked before looking through charged weapons; unsuccessful discovery is retried at most ten times per second while the button stays held. Render does not run a second assist. Normal shot, hold and idle diagnostics are disabled; startup and actual errors remain logged.
 
-Offline binding, work-budget and synthetic firing tests pass. Measured in recorded play the addon costs under 0.1 ms per frame, in missions and aboard the ship.
+While Fire is up, an update reads only the local Fire input found at the last full check and stops there; every 15th update checks the local avatar and the charge record in full. While Fire is held between those checks, the update verifies the kept avatar, Fire input and weapon-holder row instead of resolving them again: 12 memory reads per update while the Arc Thrower fires (26 before) and 4 while another weapon fires (16 before). Reads go into reused buffers, so an idle update allocates nothing.
+
+Offline binding, work-budget and synthetic firing tests pass. Measured in live play (v1.7) the addon costs 0.018 ms per frame in missions and 0.016 ms on the ship.
 
 Release **v1.6** adds bounded recovery without changing charge times, cadence,
 damage, or arc settings. It revalidates the cached auto-fire record every 250 ms
@@ -79,4 +92,10 @@ accepts up to 4096 entries and examines at most 64 active candidates per attempt
 Recovery, release, changed-weapon, work-budget, and packaged-payload checks run
 offline; the recovery paths have not been reproduced in live play.
 
-Current version: **v1.6.1**, for game build **25480438**. See [changes](CHANGELOG.md) and [validation coverage](docs/MIGRATION_VALIDATION.md).
+Current version: **v1.7**, for game build **25480438**. See [changes](CHANGELOG.md) and [validation coverage](docs/MIGRATION_VALIDATION.md).
+
+**AI disclosure:** Claude Opus 5.5 assisted with research, implementation, tests and documentation.
+
+## License
+
+Zero-Clause BSD (0BSD): use, copy, modify and distribute for any purpose, with no conditions. See `LICENSE`.

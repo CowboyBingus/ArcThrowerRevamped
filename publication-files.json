@@ -5,6 +5,7 @@
   "CHANGELOG.md",
   "GAME_UPDATE_25327279.md",
   "INSTALL.txt",
+  "LICENSE",
   "README.md",
   "check.py",
   "dependencies.json",
@@ -12,7 +13,10 @@
   "docs/RELEASE_NOTES.md",
   "publication-files.json",
   "scripts/build.py",
+  "scripts/entry.py",
   "src/arc_thrower_auto.lua",
+  "src/bingus_runtime.lua",
+  "tests/frame_budget.lua",
   "tests/test_bindings.lua",
   "tests/test_work_budget.lua"
 ]

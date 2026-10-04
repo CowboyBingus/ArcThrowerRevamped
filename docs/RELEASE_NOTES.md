@@ -1,3 +1,8 @@
-- Documentation-only release: the addon is identical to v1.6 (same packaged script).
-- Rewrites the install notes packaged with the addon and the README status: one current status line instead of the compatibility-candidate notes left from the game-build update. In live play the addon loads and finds the Arc Thrower's charge record.
-- Lists one loader requirement, Bingus Shared Loader v18.
+- Lower per-frame cost: an idle update reads only the local Fire input and allocates nothing, and firing needs about half the memory reads.
+- Another mod that declares the same Windows functions first can no longer leave the addon idle for the session.
+- Every write is checked first, and the read-only weapon record is made writable for that one write only.
+- An error from the game or another mod puts the Arc Thrower's record back and pauses the addon until updates run cleanly again; eight errors in one burst stop it for the session.
+- The record is also put back at shutdown, and the log names the first failure.
+- Uses less of the code cache the game and every mod share (about 5 KB instead of 10 KB).
+- Requires Bingus Shared Loader v18 or newer.
+- Measured in live play: 0.018 ms per frame in missions and 0.016 ms on the ship.
