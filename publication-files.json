@@ -15,6 +15,7 @@
   "scripts/build.py",
   "scripts/entry.py",
   "src/arc_thrower_auto.lua",
+  "src/bingus_memory.lua",
   "src/bingus_runtime.lua",
   "tests/frame_budget.lua",
   "tests/test_bindings.lua",
