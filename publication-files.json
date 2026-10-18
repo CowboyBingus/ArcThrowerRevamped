@@ -18,6 +18,8 @@
   "src/bingus_memory.lua",
   "src/bingus_runtime.lua",
   "tests/frame_budget.lua",
+  "tests/reference/arc_thrower_auto.lua",
   "tests/test_bindings.lua",
+  "tests/test_equivalence.lua",
   "tests/test_work_budget.lua"
 ]
